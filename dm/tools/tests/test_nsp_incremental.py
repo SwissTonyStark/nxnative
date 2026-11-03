@@ -99,6 +99,14 @@ class DeriveProfile(Base):
                 self.derive(**kw); self.assert_fresh()
         self.assertEqual(game.Game(self.pdir).title_id, 0x0100AAAA00FFF000)
 
+    def test_modules_the_version_lacks_are_left_out(self):   # Mario Kart World: its 1.8.0 profile lists subsdk1, which the base game does not ship
+        (self.src / 'game.tsv').write_text((self.src / 'game.tsv').read_text().replace('modules\tmain\n', 'modules\tmain subsdk1 sdk\n'))
+        nso(self.ex / 'ExeFS/sdk', BID)
+        self.derive(mods=('main', 'subsdk1', 'sdk'))
+        g = game.Game(self.pdir)
+        self.assertEqual(g.words('modules'), ['main', 'sdk'])
+        self.assertEqual(set(g.builds()['v65536']) - {'display'}, {'main', 'sdk'})
+
     def test_removed_source_file_goes(self):
         self.derive(); self.later_stages(); self.derive(); self.assert_kept()
         (self.src / 'pso_manifest.tsv').unlink(); self.derive()

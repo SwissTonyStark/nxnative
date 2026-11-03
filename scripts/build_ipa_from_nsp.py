@@ -930,6 +930,9 @@ def derive_profile(g, pdir, ver, d, mods, app=None, shader_only=False):
         if not own_step and line.split(T, 1)[0] == 'fps_target' and line.partition(T)[2].strip() != '0':
             out += ['# the profile has frame step stubs for other builds only: this version\'s main has none, so it keeps the game\'s own step', f'fps_target{T}0']; continue
         if line.split(T, 1)[0] in ids: out.append(ids[line.split(T, 1)[0]]); continue
+        if not shader_only and line.split(T, 1)[0] == 'modules':   # the modules this version ships, as its build row: Mario Kart World's base game has no subsdk1, which its
+            have = [m for m in line.partition(T)[2].split() if (d / 'ExeFS' / m).exists()]   # 1.8.0 profile lists, and the rewrite stopped on the missing file
+            if have: out.append(f'modules{T}' + ' '.join(have)); continue
         if not shader_only and line.split(T, 1)[0] in ('build', 'package', 'shader_versions'):
             if not put: out += [row, f'package{T}{ver}', f'shader_versions{T}{ver}']; put = True
             continue
