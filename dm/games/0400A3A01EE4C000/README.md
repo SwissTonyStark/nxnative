@@ -9,6 +9,7 @@ A Switch 2 game: update v655360 (the title screen says Ver. 2.0.1), SDK 20.5.25 
 | `mem_reserve 0x270000000`, `app_pool 0x240000000` | [`game.tsv`](game.tsv) | Donkey Kong Bananza's 9 GB layout, not measured here. The NPDM declares no system resource |
 | `mem_used 0x5600000` | `game.tsv` | the rewritten modules take 82 MB, more than the default 64 MB that `SetHeapSize` checks the game's request against |
 | `pad_layout full` | `game.tsv` | |
+| `depth_mode zero` | `game.tsv` | the game sets the near = 0 depth mode. Without the key the Mac app's pipeline archive was made for near = −w and refused (`made for … depth near=-w …, this run needs … depth near=0`), so the first start built its 6,172 pipeline bases again: the first frame at 105 s on an Apple M4. With an archive made for near = 0 (same chain, same pairs) it holds every base (16 of 16 probed), and the first frame is at 3.7 s |
 
 ## Files
 

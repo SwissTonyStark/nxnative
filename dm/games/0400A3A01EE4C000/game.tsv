@@ -37,3 +37,8 @@ mem_used	0x5600000
 # ---- Shader split (shader_split.py) ----
 shader_groups	/motor_asset_re/=rdb
 shader_note	Pokemon Pokopia shaders
+
+# ---- Graphics ----
+# the game sets the near = 0 depth mode ("[nvn] depth mode near=0" at boot): the pipeline bases made before it runs take the main0_z vertex entries. Without the key the Mac app's
+# bundled archive was made for near = -w and refused at the first start, which built its 6,172 pipeline bases again: 102 s of "Preparing pipelines" on an Apple M4
+depth_mode	zero
