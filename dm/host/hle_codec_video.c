@@ -412,6 +412,19 @@ CV_FAMILY(av1, CV_AV1, "_ZN2nn5codec29CalculateAv1DecoderWorkBufferEPmS1_mtt",
     "_ZN2nn5codec29AcquireAv1DecoderOutputBufferEPjPNS_2gs16NativeSyncHandleEPNS0_14Av1DecoderTypeE", "_ZN2nn5codec29ReleaseAv1DecoderOutputBufferEPNS0_14Av1DecoderTypeEjNS_2gs16NativeSyncHandleE",
     "_ZN2nn5codec35GetAv1DecoderOutputBufferPropertiesEPtS1_S1_S1_PNS_8TimeSpanEPbPNS0_14Av1DecoderTypeEj")
 #undef CV_FAMILY
+// The older GetOutputBufferProperties, with the picture's nn::movie::ColorSpace (Mario Kart World's base game imports it for every codec). Left to the SDK, it looked in the
+// property cache the SDK keeps in the decoder type from +0x120 (0x30 bytes a buffer), found it empty and wrote the picture's size there: over the host's submission-ready event at
+// CV_EVENT_OFF, whose state byte (+0x28) nn::os then took for an uninitialised event, so ClearSystemEvent aborted after the Grand Prix movie's first picture. The colour space is
+// written 0: the host does not know the enum's values, and the game sets it to 0 before the call and does not read it (open). The ninth argument is the first past the registers,
+// at sp on both ABIs
+#define CV_PROPS_CS(tag, s_props) \
+    HLE_FORCE(s_props, "the filled buffer's picture size, time and end of stream; colour space 0", Result, h_cv_##tag##props_cs, uint16_t *w, uint16_t *h, uint16_t *cw, uint16_t *ch, \
+              uint32_t *cs, int64_t *ts, bool *eos, void *t, uint64_t i) { *cs = 0; return cv_dec_props(w, h, cw, ch, ts, eos, t, (uint32_t)i); }
+CV_PROPS_CS(vp9, "_ZN2nn5codec35GetVp9DecoderOutputBufferPropertiesEPtS1_S1_S1_PNS_5movie10ColorSpaceEPNS_8TimeSpanEPbPNS0_14Vp9DecoderTypeEj")
+CV_PROPS_CS(vp8, "_ZN2nn5codec35GetVp8DecoderOutputBufferPropertiesEPtS1_S1_S1_PNS_5movie10ColorSpaceEPNS_8TimeSpanEPbPNS0_14Vp8DecoderTypeEj")
+CV_PROPS_CS(h264, "_ZN2nn5codec36GetH264DecoderOutputBufferPropertiesEPtS1_S1_S1_PNS_5movie10ColorSpaceEPNS_8TimeSpanEPbPNS0_15H264DecoderTypeEj")
+CV_PROPS_CS(av1, "_ZN2nn5codec35GetAv1DecoderOutputBufferPropertiesEPtS1_S1_S1_PNS_5movie10ColorSpaceEPNS_8TimeSpanEPbPNS0_14Av1DecoderTypeEj")
+#undef CV_PROPS_CS
 HLE_FORCE("_ZN2nn5codec21InitializeH264DecoderEPNS0_15H264DecoderTypeEPvmmttjNS0_23VideoDecoderInputFormatENS0_24VideoDecoderOutputFormatENS0_22VideoDecoderOutputModeEPKvm",
           "decoded with VideoToolbox on the host", Result, h_cv_h264init3, void *t, void *work, uint64_t wsize, uint64_t bs, uint64_t w, uint64_t h, uint32_t refs, uint32_t in, uint64_t out,
           uint64_t mode, const void *csd, uint64_t csd_n) {   // past the registers: 8-byte slots, as the SDK 22 forms below
@@ -472,6 +485,12 @@ HLE_FORCE("_ZN2nn6syncpt3sdk21RequestSyncPointEventEPNS1_18SyncPointEventTypeERK
     if (k == 64) { LOG("[RED] nn::syncpt: more than 64 armed events: signalled at once"); hle_signal_system_event(e); return 0; }
     if (sync_reached(s)) { spt_unarm(e); hle_signal_system_event(e); }
     return 0;
+}
+// Whether the event is signalled, without clearing it (its SystemEvent is manual-clear). Mario Kart World's base game (v0) asks before it requests an event again and cancels the
+// event only when it is not signalled; the SDK's own one jumped through the same null table as CreateSyncPointEvent (pc 0) when the Grand Prix's cup movie started
+HLE_FORCE("_ZN2nn6syncpt3sdk21TryWaitSyncPointEventEPKNS1_18SyncPointEventTypeE", "the event's SystemEvent, not cleared", bool, h_spt_trywait, const void *e) {
+    static bool (*trywait)(void *); if (!trywait && !(trywait = guest_sym("_ZN2nn2os18TryWaitSystemEventEPNS0_15SystemEventTypeE"))) die("nn::os::TryWaitSystemEvent missing");
+    return trywait((void *)e);
 }
 HLE_FORCE("_ZN2nn6syncpt3sdk20CancelSyncPointEventEPNS1_18SyncPointEventTypeE", "disarms the event", void, h_spt_cancel, void *e) { spt_unarm(e); hle_clear_system_event(e); }
 HLE_FORCE("_ZN2nn6syncpt3sdk21DestroySyncPointEventEPNS1_18SyncPointEventTypeE", "destroys the event's SystemEvent", void, h_spt_destroy, void *e) {

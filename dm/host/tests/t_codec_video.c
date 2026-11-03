@@ -19,7 +19,10 @@ void hle_signal_system_event(void *e) { g_ev[ev_slot(e)].set = 1; }
 void hle_clear_system_event(void *e) { g_ev[ev_slot(e)].set = 0; }
 static int ev_set(void *e) { return g_ev[ev_slot(e)].set; }
 static void destroy_ev(void *e) { g_ev[ev_slot(e)].bound = g_ev[ev_slot(e)].set = 0; }   // nn::os::DestroySystemEvent: closing the handle unbinds the event
-void *guest_sym(const char *n) { return !strcmp(n, "_ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE") ? (void *)destroy_ev : NULL; }
+static bool trywait_ev(void *e) { return ev_set(e); }   // nn::os::TryWaitSystemEvent of a manual-clear event: reads, does not clear
+void *guest_sym(const char *n) {
+    return !strcmp(n, "_ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE") ? (void *)destroy_ev : !strcmp(n, "_ZN2nn2os18TryWaitSystemEventEPNS0_15SystemEventTypeE") ? (void *)trywait_ev : NULL;
+}
 static vpx_image_t *black_i420(unsigned w, unsigned h) {
     vpx_image_t *c = vpx_img_alloc(NULL, VPX_IMG_FMT_I420, w, h, 1); if (!c) return NULL;
     memset(c->planes[0], 16, (size_t)c->stride[0] * h);
@@ -92,17 +95,23 @@ int main(void) {
     assert(d->nheld == CV_HOLD - 1 && ev_set(ev));
     assert(!h_cv_vp9acq(&idx, &sync, dec) && idx == 1 && h_gs_trywait(&sync));
     assert(!h_cv_vp9props(&w, &h, &cw, &ch, &ts, &eos, dec, 1) && ts == 2000);
+    {   uint16_t w2, h2, cw2, ch2; int64_t ts2; bool eos2; uint32_t cs = 7; uint8_t before[0x400]; memcpy(before, dec, sizeof before);
+        assert(!h_cv_vp9props_cs(&w2, &h2, &cw2, &ch2, &cs, &ts2, &eos2, dec, 1) && cs == 0 && w2 == w && h2 == h && cw2 == cw && ch2 == ch && ts2 == ts && eos2 == eos);
+        assert(!memcmp(before, dec, sizeof before) && h_cv_vp9props_cs(&w2, &h2, &cw2, &ch2, &cs, &ts2, &eos2, dec, 3) == CV_NONE);   }
 
     // Sync point event: armed on an unfilled buffer, signalled when the picture lands; one armed on a filled buffer is signalled at once
     assert(!h_spt_create(spt) && g_ev[ev_slot(spt)].bound);
     h_cv_vp9rel(dec, 0, sync);   // buffer 0 takes the next waiting picture at once
     assert(!h_cv_vp9acq(&idx, &sync, dec) && idx == 0);
     assert(!h_spt_request(spt, &sync) && ev_set(spt) && !SPT(spt)->armed);
+    assert(h_spt_trywait(spt) && h_spt_trywait(spt) && ev_set(spt));   // TryWaitSyncPointEvent reads the event and leaves it signalled
     assert(!h_cv_vp9reg(dec, 2, pool[2], 0) && !h_cv_vp9acq(&idx, &sync, dec) && idx == 2);
     for (int i = 0; i < 2; i++) { h_cv_vp9rel(dec, (uint32_t)i, sync); assert(!h_cv_vp9acq(&idx, &sync, dec)); }   // the last two waiting pictures go out
     h_cv_vp9rel(dec, 2, sync); assert(!h_cv_vp9acq(&idx, &sync, dec) && idx == 2 && !h_gs_trywait(&sync));
     assert(!h_spt_request(spt, &sync) && !ev_set(spt) && SPT(spt)->armed);
+    assert(!h_spt_trywait(spt));
     assert(!h_cv_vp9submit(&id, dec, vp9, sizeof vp9, 3000, false) && ev_set(spt) && !SPT(spt)->armed && h_gs_trywait(&sync));
+    assert(h_spt_trywait(spt));
 
     // End of stream with no data: the next released buffer carries it, with no picture
     assert(!h_cv_vp9submit(&id, dec, NULL, 0, 0, true) && d->eos_pending);
