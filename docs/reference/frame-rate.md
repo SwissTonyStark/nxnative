@@ -307,6 +307,22 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 - **Found on:** Batman: Arkham Knight (`0100ACD0163D0000`; its profile and note are in a PR of their own): 119.8 fps in the opening cutscene on an M2 Max.
 - **Check:** `t_link_ticks` (also run in CPU-only CI): with a controlled clock and one tick delivered per timed wait, a 60 Hz vsync waits two ticks of a 120 Hz link and one tick of a 60 Hz one, and a wait in the link's own ticks takes one tick per frame. The real acquire checks display pacing at 60, 75, 90, 120 and 240 Hz, game intervals and frame-step caps, including the 60 and 30 Hz link modes. Exact tick counts, already elapsed ticks, spurious wakes and silent-link timeouts are checked without depending on OS scheduling: a sleeping ticker could miss the acquire's wall-clock timeout on CI. These checks do not measure a game's frame rate on a screen.
 
+### 40 fps on a 120 Hz display link
+
+- **Symptom:** a game that cannot hold 60 fps but could hold 25 ms a frame runs at an uneven 30-35 fps: a frame step in whole vsyncs of 1/60 s has only 60, 30 and 20 as steady rates. Ocarina of Time on an M4 Mac mini (10 GPU cores): about 31 ms a frame at 2048x1152.
+- **Cause:** 25 ms is 1.5 vsyncs of 1/60 s, which whole-vsync steps cannot count and a 60 Hz link cannot show. A 120 Hz screen shows it exactly, three refreshes a frame.
+- **Fix:** `DM_FPS_TARGET=40` (`fps_mid` in `hle_nvn.c`), on branch `oot-40fps-checkpoint` only. The frame step counts ticks of 1/120 s with the hold fixed at 3, `mid_link_tick` asks for the 120 Hz link and `link_wait` waits the 3 ticks. It needs a main whose step reads the measured frame time (state `+0x3c` and `+0x38`, Ocarina's `patches.py` there): a stub reading whole vsyncs from `+0x20` would run at 1.5 times its speed, so this is the player's switch and no profile default.
+- **Open:** below 120 Hz the mode is wrong. `mid_link_tick` keeps link mode 2, `mtl_link_rate` answers 120 whatever the screen runs at, and 3 ticks of a 60 Hz link are 50 ms: 20 fps, measured through an AirPlay mirror, while the `[RED]` line says 30. Link mode 1 below 120 Hz, two ticks a frame, would give 30. Movies stay at 40 fps (the usual 30 would be 4 ticks, past `FSTEP_MAX`) and fullscreen runs the same path; neither has been checked.
+- **Check:** on a 120 Hz screen, the `display link up to tick` line shows about two empty ticks per present and the `timing up to frame` lines a frame p50 of 25.0 ms.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#frame-rate).
+
+### A dynamic resolution aimed at a longer frame through its GPU timestamps
+
+- **Symptom:** at a frame rate below the one it was written for, a game's dynamic resolution still fits its GPU time to the old budget, and the picture stays far smaller than the longer frame allows.
+- **Cause:** agl's controller compares the GPU time between two of the game's counter reports with a 60 fps budget, 16.7 ms.
+- **Fix:** test switch `DM_NVN_GPU_TS_SCALE=<factor>` (`ts_scaled` in `nvn_mtl.m`, branch `oot-40fps-checkpoint`): counter reports advance at that fraction of the GPU clock, so 0.667 makes 16.7 ms of reported time 25 ms of real time. Only the reports: `gpu_ticks` keeps the guest clock, so the two drift apart. A workaround for a budget the game fixes in its own code.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#frame-rate): at 0.69 with 40 fps, 1593x896 at a GPU p50 of 24.7 ms.
+
 ### Present snapshots: the game's swapchain texture free at once
 
 - **Symptom:** frames miss the screen while the GPU stays at its lowest clock (444 MHz on an M2 Max); more work (a higher render scale) only makes the frames slower.

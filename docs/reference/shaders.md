@@ -721,6 +721,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game): all 1,284 of its mesh pairs build their Metal mesh pipelines.
 - **Check:** `test_dmsh_meshstage.py` (`test_outputs_as_wide_as_read`, `test_pixel_reads`, and Metal compiling narrowed outputs).
 
+### Mesh vertex staging in thread-private registers
+
+- **Symptom:** mesh draws cost several milliseconds whatever the resolution. Ocarina of Time's foliage: about 9 ms of 31 at 2048x1152, 0.6 ms less with no primitives output, and 1.8 ms more with 8 KB more threadgroup memory.
+- **Cause:** the translated shader emulates NVIDIA's stage memory with a `threadgroup uint[]` holding the task payload, every vertex attribute and the index bytes: 3,469 words, 13.9 KB per 32-thread workgroup in the heaviest foliage shader, on top of its mesh output. The cost following threadgroup memory points to how few workgroups a GPU core keeps resident; that is inferred from the measurements above, not read from a GPU counter.
+- **Fix:** post-processing of the translated source on branch `oot-40fps-checkpoint` (`dm/tools/oot_perf/meshpd.py`, then `privstage.py`), not in the translator. The mesh body reads the payload straight from object data, and each vertex's words stay in registers of the one thread that writes them, emitted from there; the array keeps the system words, the primitive count and the index bytes (3,469 to 78 words). It applies when a thread writes whole vertices at a few bases: 343 of the game's 500 mesh shaders.
+- **Check:** `privstage.py` reports the array sizes and refuses any other store shape. Only Kokiri Forest has been seen rendered with these libraries.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#frame-rate): foliage pass 7.0 to 5.1 ms, and the dynamic resolution at 40 fps from 1195x672 to 1536x864 with the same output.
+
 ### Single-stage programs paired with a cover
 
 - **Cause:** a game that builds one NVN program per GLSLC output and combines vertex and pixel programs per draw with `BindProgram` stage bits has its real pairs only at draw time, so the offline build cannot know which pixel shaders a vertex shader must feed.

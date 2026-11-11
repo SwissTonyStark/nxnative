@@ -875,6 +875,13 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** **Open.** Neither setter has been implemented. The opening indoor scene renders and accepts input, but the visual contribution of the missing coverage state has not been isolated. The diagnostic remains visible.
 - **Found on:** [Pokémon Scarlet](../../dm/games/0100A3D008C5C000/README.md#open) (1.0.0, the first playable bedroom). [Super Mario RPG](../../dm/games/0100BC0018138000/README.md) calls the dilation setter and `nvnCommandBufferSetSubpixelPrecisionBias` repeatedly and did not turn the enable on along the route tested, so the dilation has nothing to act on there.
 
+### A depth prepass and its later compare from two different mesh shaders
+
+- **Symptom:** isolated black dots in ground fog that change every frame; they are already in the half-resolution fog buffer, and removing the full-screen haze composite removes them.
+- **Cause:** a depth-only pass draws the fog's top surface with one mesh shader into a half-resolution depth, and a second mesh shader with its own pixel shader discards where `gl_FragCoord.z` exceeds that depth. The two shaders compute the same surface with differently ordered code, so z differs by rounding at some pixels and the fog is discarded there. `[[position, invariant]]` holds only within one shader.
+- **Fix:** a loose library of pixel shader `5ad65c0eefd09c7f` compares against `fma(abs(z), 1e-5, z)`. A workaround in one game's shader (`~/Games/oot/run/fogfix/` on the Mac it was made on): what makes the console's two shaders agree is not known.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#open): mesh shaders `3500af98dd8372cb` and `066f5daf12e43c71`; clean in 6 shots at the same 31.4 ms.
+
 ## Vertex input and draws
 
 ### Integer vertex inputs
