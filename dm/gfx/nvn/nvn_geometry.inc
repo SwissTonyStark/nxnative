@@ -693,6 +693,10 @@ static void mesh_tasks_draw(const p_draw *dw) {
     draw_(&triangle, NULL);
     g_geo_program = nil; g_mtk.on = 0; args_dirty_all();
     if (g_mtk.miss) { g_mtk_wait++; return; }
+    // Diagnostic: in a DM_NVN_GPUPROF frame, name each task / mesh draw (pass, shaders, workgroups); DM_NVN_MESH_OWN=1 also ends the pass after it, so the draw is timed on its own (the passes split: times read high)
+    if (gp_active()) { static int own = -1; if (own < 0) own = getenv("DM_NVN_MESH_OWN") && atoi(getenv("DM_NVN_MESH_OWN"));
+        MLOG("[gpuprof-m] F%llu pass %llu enc %d task %s mesh %s fragment %s groups %u%s", (unsigned long long)atomic_load(&g_cur_frame), (unsigned long long)g_stat_pass, g_gp_cur, ts ? ts->key : "-", ms->key, pr->sh[1] ? pr->sh[1]->key : "-", g_mtk.count, ind ? " (indirect)" : "");
+        if (own) rp_end(); }
     swrite_note(pr); g_wr_epoch++;
     if (!g_mtk_n++) MLOG("task / mesh: first draw, task %s mesh %s fragment %s, %u workgroups from %u%s", ts ? ts->key : "-", ms->key, pr->sh[1] ? pr->sh[1]->key : "-", g_mtk.count, g_mtk.first, ind ? " (indirect)" : "");
 }

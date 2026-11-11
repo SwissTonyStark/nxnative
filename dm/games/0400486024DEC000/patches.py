@@ -77,6 +77,65 @@ MATCH_FRAME_STEP = {'main': [
                 'dynamic resolution update': {'size': 0xb24, 'fingerprints': ['5a423697838976baf286cffa5e2ceef0d4e037abbcd9d371e90e9e702d61b3d4']}}},   # main+0x805aa0
 ]}
 
+# Local (branch oot-40fps-main): for build e0f3ccfa FRAME_STEP below takes precedence over MATCH_FRAME_STEP. The 40 fps mode (hle_nvn.c fps_mid) holds a frame 1.5 vsyncs, which the whole-vsync step of frame_step above cannot express
+# Real-time speed. The frame loop (main+0x6e6be0) computes each frame's step as a constant over its target frame rate and never reads the clock: s1 is 60, or 30 in one mode of the game
+# (the fcsel at main+0x6e6cc0), s0 the target ([fw+0x2c8] as a float), so one frame is one step however long it took and everything runs slowly below the target.
+# The stub keeps that division and takes the larger of it and s1 x the measured frame time (state +0x38, float seconds, hle_nvn.c): 0 there leaves the game's own step, and the step is
+# never below it. It marks state +0x3c so the host measures only for a main that reads the value. x16, x17 and s0 are not read again before they are written after the site
+def real_speed(ctx):
+    here, emit = ctx.here, ctx.emit
+    ctx.site(0x6e6cc4, '2818201e')
+    start = here()
+    emit(0x1e201828)                       # fdiv s8,s1,s0        the game's own step
+    emit(ADRP(16, here(), ctx.state))
+    for w in (0x52800031,   # mov w17,#1
+              0xb9003e11,   # str w17,[x16,#0x3c]  this main reads the frame time
+              0xbd403a00,   # ldr s0,[x16,#0x38]   seconds; 0 = at the target
+              0x1e210800,   # fmul s0,s0,s1
+              0x1e204908):  # fmax s8,s8,s0
+        emit(w)
+    emit(B(here(), 0x6e6cc8))
+    ctx.put(0x6e6cc4, [B(0x6e6cc4, start)], 'frame step from the measured frame time, never below the game\'s own (state +0x38)')
+
+
+# TEST ONLY (not upstream): a dynamic-resolution floor at the game's final scale store (the site of seedds/nxnative PR #1497, which caps it). State +0x10 holds DM_RENDER_SCALE
+# (host, 0.5 to 1.0, 1.0 when unset): below 1.0 the stored scale is max(the game's, that value), so the game may still go higher but never below; 1.0 keeps the original store
+def render_floor(ctx):
+    site = 0x31d3f48
+    ctx.site(site, '805e0ebd')  # str s0,[x20,#0xe5c]
+    start = ctx.here()
+    ctx.emit(0xadbf7ffe)  # stp q30,q31,[sp,#-32]!
+    ctx.emit(0xa9bf47f0)  # stp x16,x17,[sp,#-16]!
+    ctx.emit(ADRP(16, ctx.here(), ctx.state))
+    for word in (
+        0xd53b4211,  # mrs x17,nzcv
+        0xbd40121e,  # ldr s30,[x16,#0x10]
+        0x1e2023c8,  # fcmp s30,#0
+        0x540000ed,  # b.le original
+        0x1e2e101f,  # fmov s31,#1
+        0x1e3f23c0,  # fcmp s30,s31
+        0x5400008a,  # b.ge original
+        0x1e3e481f,  # fmax s31,s0,s30
+        0xbd0e5e9f,  # str s31,[x20,#0xe5c]
+        0x14000002,  # b restore
+        0xbd0e5e80,  # original: str s0,[x20,#0xe5c]
+        0xd51b4211,  # restore: msr nzcv,x17
+        0xa8c147f0,  # ldp x16,x17,[sp],#16
+        0xacc17ffe,  # ldp q30,q31,[sp],#32
+    ):
+        ctx.emit(word)
+    ctx.emit(B(ctx.here(), site + 4))
+    ctx.put(site, [B(site, start)], 'TEST: dynamic resolution floor from the host render scale (1.0 = original)')
+    ctx.render_scale = 1
+
+
+def speed_and_floor(ctx):
+    real_speed(ctx)
+    render_floor(ctx)
+
+
+FRAME_STEP = {'e0f3ccfaf50065ae4ea01eb5aeb13b1a': speed_and_floor}   # 1.1.1 (v131072), the main of v0 too
+
 BINDING = [
     {'what': 'frame ratio from the host\'s step', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate',
      'why': "the game's own frame-ratio division, found by its function's fingerprint on any build that keeps the function",

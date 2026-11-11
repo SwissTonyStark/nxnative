@@ -1164,6 +1164,13 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Fix:** `SetGraphicsFrameLengthMode` is hooked and logs the mode once per change; both `oe` paths reach it. The host paces by the window's present interval (`hle_oe.c`).
 - **Found on:** [Hyrule Warriors: Age of Imprisonment](../../dm/games/04003F40232DE000/README.md): 60 / its present interval at boot.
 
+### The graphics scale tier is the GPU share the system leaves
+
+- **Symptom:** a docked picture smaller than the screen by a fixed factor, with the game's top internal size at 0.8 of what the output allows. Ocarina of Time's docked output was 2048x1152 in a 2560x1440 window.
+- **Cause:** `nn::oe::GetCurrentGraphicsScale` answered 1 docked, following the operation mode. The tier is the share of the GPU the system leaves the game (0 all of it, 1 and 2 less, as while GameChat's video runs), and games shrink their picture and their GPU budget to match.
+- **Fix:** `h_oe_GfxScale` in `hle_oe.c` answers 0 in both modes; `DM_GFX_SCALE` sets 1 or 2 to reproduce a reduced share. From commit 743e13df of the `cheemu21/kid-with-sword-remake` fork; on branch `oot-40fps-checkpoint` here, not on main when this was written.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#frame-rate): docked output 2048x1152 to 2560x1440, and a GPU p50 about 2 ms higher at the same resolution level.
+
 ### The display's largest buffer
 
 - **Symptom:** a Switch 2 game presents at 720p, with its upscaler at the matching low size.
